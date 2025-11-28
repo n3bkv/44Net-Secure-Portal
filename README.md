@@ -247,6 +247,12 @@ MIT License © 2025 Dave (N3BKV)
 
 ---
 
+## Support This Project
+
+If you find this useful, star ⭐ the repo! It helps others discover it.
+
+---
+
 ## Resources & Badges
 
 [![Docker](https://img.shields.io/badge/Docker-Ready-blue?logo=docker)](https://www.docker.com/)  

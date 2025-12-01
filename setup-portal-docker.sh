@@ -8,6 +8,7 @@ set -euo pipefail
 # - HTTPS: one SAN cert for portal+auth issued by authelia router; portal reuses
 # - Writes .env with TZ for Compose
 # - Optional wipe of /opt/portal-docker before rebuild
+# - Writes Authelia configuration.yml including NTP settings to avoid NTP startup failures
 
 BASE="/opt/portal-docker"
 TRAEFIK_DIR="$BASE/traefik"
@@ -29,9 +30,22 @@ die(){ red "ERROR: $*"; exit 1; }
 require_root(){ [[ $EUID -eq 0 ]] || die "Run as root (sudo)."; }
 is_cmd(){ command -v "$1" >/dev/null 2>&1; }
 
-validate_domain(){ local d="${1:?}"; [[ "$d" =~ ^([A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]{2,63}$ ]] || die "Invalid domain: $d"; }
-validate_url(){ local u="${1:?}"; [[ "$u" =~ ^https?://[A-Za-z0-9\.\-:]+(/.*)?$ ]] || die "Invalid URL: $u"; }
-calc_base_zone(){ local host="${1:?}"; printf '%s\n' "${host#*.}"; }
+validate_domain(){
+  local d="${1:?}"
+  [[ "$d" =~ ^([A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]{2,63}$ ]] \
+    || die "Invalid domain: $d"
+}
+
+validate_url(){
+  local u="${1:?}"
+  [[ "$u" =~ ^https?://[A-Za-z0-9\.\-:]+(/.*)?$ ]] || die "Invalid URL: $u"
+}
+
+calc_base_zone(){
+  local host="${1:?}"
+  # Example: portal.example.com -> example.com
+  printf '%s\n' "${host#*.}"
+}
 
 hash_password_bcrypt(){
   local pw="${1:?}"
@@ -43,7 +57,10 @@ hash_password_bcrypt(){
   printf '%s' "$hash"
 }
 
-docker_network_exists(){ docker network ls --format '{{.Name}}' | grep -qx "$NETWORK_NAME"; }
+docker_network_exists(){
+  docker network ls --format '{{.Name}}' | grep -qx "$NETWORK_NAME"
+}
+
 docker_network_is_compose_owned(){
   local id label
   id="$(docker network inspect -f '{{.Id}}' "$NETWORK_NAME" 2>/dev/null || true)"
@@ -270,7 +287,8 @@ YAML
 }
 
 write_authelia_users(){
-  local hash; hash="$(hash_password_bcrypt "$AUTH_PASS")"
+  local hash
+  hash="$(hash_password_bcrypt "$AUTH_PASS")"
   cat >"$AUTHELIA_DIR/users_database.yml" <<YAML
 users:
   ${AUTH_USER}:
@@ -286,7 +304,9 @@ YAML
 }
 
 write_authelia_config(){
-  local base_zone; base_zone="$(calc_base_zone "$PORTAL_DOMAIN")"
+  local base_zone
+  base_zone="$(calc_base_zone "$PORTAL_DOMAIN")"
+
   cat >"$AUTHELIA_DIR/configuration.yml" <<YAML
 server:
   address: "tcp://0.0.0.0:9091/"
@@ -321,6 +341,22 @@ notifier:
 identity_validation:
   reset_password:
     jwt_secret: "$(openssl rand -hex 64)"
+
+# NTP configuration to avoid Authelia startup failures due to NTP checks
+ntp:
+  # Known-good public NTP server
+  address: "udp://time.cloudflare.com:123"
+  version: 4
+
+  # Be a bit more tolerant than the strict 3s default
+  max_desync: 10s
+
+  # Run the check at startup (recommended)
+  disable_startup_check: false
+
+  # If the NTP check fails, still allow Authelia to start but log an error.
+  # If you want it to hard fail on bad time, set this back to false later.
+  disable_failure: true
 YAML
 
   # Access control
@@ -373,6 +409,7 @@ main(){
 
   write_compose
   write_traefik_static
+  # Inject LE_EMAIL into the static Traefik config
   sed -i "s/\${LE_EMAIL}/$(printf '%s' "$LE_EMAIL" | sed 's/[&/]/\\&/g')/" "$TRAEFIK_STATIC"
   write_traefik_dynamic
   write_authelia_users
@@ -381,14 +418,12 @@ main(){
   (cd "$BASE" && docker compose up -d)
 
   echo
-  echo "Wait one minute before accessing portal via an external computer"  
-  echo "https://${AUTH_DOMAIN}"
-
+  echo "Wait one minute before accessing portal via an external computer:"
+  echo "  https://${AUTH_DOMAIN}"
   echo
-  echo "== Quick checks == From an external computer"
+  echo "== Quick checks == (from an external computer)"
   echo "curl -sSI http://${AUTH_DOMAIN}/.well-known/acme-challenge/TEST | head -n1"
   echo "curl -I https://${AUTH_DOMAIN}"
-
   echo
   echo "== Cert troubleshooting =="
   echo "docker compose logs -f traefik | egrep -i 'acme|certificate|challenge|letsencrypt|error'"

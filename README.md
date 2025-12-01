@@ -235,6 +235,53 @@ To see any certificate errors run this:
      
 ---
 
+## Fixing Authelia NTP Startup Errors (Important)
+
+Authelia performs its own internal NTP (Network Time Protocol) check at startup.  
+This check is **separate from the system clock** (`timedatectl`), and Authelia will fail if:
+
+- The NTP server is unreachable  
+- UDP/123 is blocked  
+- Docker drops a packet  
+- There is jitter or latency during startup  
+
+Common Authelia log errors include:
+
+fatal failures performing startup checks provider=ntp
+could not determine the clock offset
+i/o timeout
+
+To prevent Authelia from failing on harmless NTP timeouts, the installer now automatically writes this block into `authelia/configuration.yml`:
+
+```yaml
+ntp:
+  address: "udp://time.cloudflare.com:123"
+  version: 4
+  max_desync: 10s
+  disable_startup_check: false
+  disable_failure: true
+```
+
+Why this works
+
+Cloudflare’s NTP servers are extremely reliable.
+
+Increasing max_desync reduces false positives.
+
+Authelia still performs NTP checks, but won’t crash if a packet is lost.
+
+Eliminates the “NTP provider fatal error” loop on Raspberry Pi / Docker setups.
+
+Firewall requirement
+
+If you use nftables-firewall-builder, make sure outbound NTP is allowed:
+
+```udp dport 123 accept```
+
+The updated firewall script can prompt for this automatically.
+   
+---
+
 ##  Limitations/Workarounds
 
 ***You cannot have the portal redirect to append paths automatically in your setup (e.g. http://192.168.xx.xxx:1880/ui) - the workaround is to append the /ui to you portal login URL (e.g. portal.example.com/ui).***

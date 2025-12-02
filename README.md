@@ -231,8 +231,17 @@ To see any certificate errors run this:
      ```bash
      docker compose logs -f traefik | egrep -i 'acme|certificate|challenge|letsencrypt|error'
      ```
-     
-     
+- **How do I fix a locked out user?**
+  
+  ⇒ To check if a user is on the lockout list:  
+     ```bash
+     docker exec -it portal-docker-authelia-1 sh
+     authelia storage bans user list
+     ```
+  ⇒ Then to fix a locked out user, follow the step below:  
+     ```bash
+     authelia storage bans user revoke <username>
+     ```
 ---
 
 ## Fixing Authelia NTP Startup Errors (Important)

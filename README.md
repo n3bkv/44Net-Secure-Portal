@@ -57,7 +57,7 @@ Just a reminder, since this portal sits out on the open internet, use best pract
 2. **Download the setup script:**
 
    ```bash
-   curl -fsSL https://raw.githubusercontent.com/n3bkv/portal-docker/main/setup-portal-docker.sh -o setup-portal-docker.sh
+   curl -fsSL https://raw.githubusercontent.com/n3bkv/44Net-Secure-Portal/main/setup-portal-docker.sh -o setup-portal-docker.sh
    chmod +x setup-portal-docker.sh
    ```
 
